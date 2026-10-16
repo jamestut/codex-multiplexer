@@ -1,5 +1,6 @@
 {
   "codex_path": "/home/you/bin/codex",
+  "codex_home": "/home/you/.codex",
   "log_path": "/home/you/codex-multiplexer.log",
   "runtime_dir": "/home/you/.local/state/codex-multiplexer"
 }

@@ -29,9 +29,10 @@ const (
 )
 
 type config struct {
-	CodexPath  string `json:"codex_path"`
-	LogPath    string `json:"log_path"`
-	RuntimeDir string `json:"runtime_dir"`
+	CodexPath  string  `json:"codex_path"`
+	CodexHome  *string `json:"codex_home"`
+	LogPath    string  `json:"log_path"`
+	RuntimeDir string  `json:"runtime_dir"`
 }
 
 func main() {
@@ -146,7 +147,30 @@ func validateConfig(cfg config) error {
 			return fmt.Errorf("config.json key %s must be an absolute path", name)
 		}
 	}
+	if cfg.CodexHome != nil {
+		if !filepath.IsAbs(*cfg.CodexHome) {
+			return errors.New("config.json key codex_home must be an absolute path")
+		}
+	}
 	return nil
+}
+
+func environmentWithOverride(env []string, name string, value string) []string {
+	prefix := name + "="
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
+}
+
+func codexEnvironment(env []string, codexHome *string) []string {
+	if codexHome == nil {
+		return nil
+	}
+	return environmentWithOverride(env, "CODEX_HOME", *codexHome)
 }
 
 // Preserve all caller arguments except stdio transport flags, which the server replaces.
@@ -234,6 +258,7 @@ func ensureLocked(cfg config, args []string, socketPath string, logger *log.Logg
 	// Append the Unix transport after preserving the caller's non-stdio arguments.
 	commandArgs := append(append([]string(nil), args...), "--listen", "unix://"+socketPath)
 	cmd := exec.Command(cfg.CodexPath, commandArgs...)
+	cmd.Env = codexEnvironment(os.Environ(), cfg.CodexHome)
 	// Passing the file directly avoids a wrapper-owned pipe that would close on exit.
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
