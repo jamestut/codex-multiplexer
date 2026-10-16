@@ -61,6 +61,10 @@ func run() error {
 	// Broken stdout pipes should become logged write errors instead of SIGPIPE exits.
 	signal.Ignore(syscall.SIGPIPE)
 
+	// Resolve relative Codex paths beside the originally invoked wrapper, preserving its symlink location.
+	if cfg.CodexPath != "" && !filepath.IsAbs(cfg.CodexPath) {
+		cfg.CodexPath = filepath.Join(filepath.Dir(executable), cfg.CodexPath)
+	}
 	if err := validateConfig(cfg); err != nil {
 		logger.Printf("ERROR: %v", err)
 		return err
