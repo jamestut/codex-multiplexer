@@ -1,13 +1,15 @@
 # Codex app-server multiplexer
 
-Build the wrapper and prepare its config alongside the real executable:
+Build the wrapper and prepare a config alongside the real executable as a fallback:
 
 ```sh
 go build -o codex-multiplexer .
 cp config.example.json config.json
 ```
 
-Edit `config.json` with the three required absolute paths. Optionally set `codex_home` to an absolute path to override `CODEX_HOME` for Codex processes the wrapper starts. If omitted, Codex inherits the wrapper's environment. The override applies when a server starts; an already running server keeps its existing environment. The wrapper resolves symlinks before locating the config; `~` is not expanded. The runtime directory is created automatically. The parent directory for the log file must already exist.
+Edit `config.json` with the three required absolute paths. Optionally set `codex_home` to an absolute path to override `CODEX_HOME` for Codex processes the wrapper starts. If omitted, Codex inherits the wrapper's environment. The override applies when a server starts; an already running server keeps its existing environment. `~` is not expanded. The runtime directory is created automatically. The parent directory for the log file must already exist.
+
+Config lookup checks beside the invoked path first, including when it is a symlink, then checks beside each symlink target one hop at a time through the real executable. The first config found is used; only a missing config advances lookup, while an unreadable or invalid config stops with an error. For example, if `/a/codex-multiplexer` points to `/b/codex-multiplexer`, which points to the real executable at `/c/codex-multiplexer`, lookup order is `/a/config.json`, `/b/config.json`, then `/c/config.json`.
 
 Run `./codex-multiplexer app-server` or `./codex-multiplexer app-server --listen stdio://`. The executable may be symlinked and invoked from another location. The first invocation starts Codex using its arguments, working directory, and environment; later invocations connect to that server. The server keeps running after wrapper clients exit. The log is appended with wrapper failures and Codex output.
 

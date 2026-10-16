@@ -42,7 +42,7 @@ func main() {
 }
 
 func run() error {
-	executable, err := realExecutablePath()
+	executable, err := invokedExecutablePath()
 	if err != nil {
 		return reportBootstrapError(err)
 	}
@@ -90,40 +90,103 @@ func reportBootstrapError(err error) error {
 	return err
 }
 
-// Resolve aliases so config.json is always read beside the actual wrapper binary.
-func realExecutablePath() (string, error) {
-	path, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("locate wrapper executable: %w", err)
+// Preserve the invoked path because resolving the running executable loses symlink aliases.
+func invokedExecutablePath() (string, error) {
+	path := os.Args[0]
+	if path == "" {
+		return "", errors.New("locate wrapper executable: empty invocation path")
 	}
-	path, err = filepath.Abs(path)
+	if !strings.ContainsRune(path, os.PathSeparator) {
+		// A relative PATH match is valid here because the wrapper is already running.
+		resolved, err := exec.LookPath(path)
+		if err != nil && !errors.Is(err, exec.ErrDot) {
+			return "", fmt.Errorf("locate wrapper executable: %w", err)
+		}
+		path = resolved
+	}
+	path, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("make wrapper path absolute: %w", err)
-	}
-	path, err = filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", fmt.Errorf("resolve wrapper symlinks: %w", err)
 	}
 	return path, nil
 }
 
-// Bootstrap config errors go to stderr until the configured log can be opened.
-func readConfigAndOpenLog(executable string) (config, *os.File, error) {
-	configPath := filepath.Join(filepath.Dir(executable), "config.json")
+// Check each invoked path before following one symlink; only a missing config advances.
+func discoverConfigPath(executable string) (string, error) {
+	visited := make(map[string]struct{})
+	for {
+		if _, ok := visited[executable]; ok {
+			return "", fmt.Errorf("resolve wrapper symlinks: cycle at %s", executable)
+		}
+		visited[executable] = struct{}{}
+
+		configPath := filepath.Join(filepath.Dir(executable), "config.json")
+		_, err := os.Stat(configPath)
+		if err == nil {
+			return configPath, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("inspect config %s: %w", configPath, err)
+		}
+		missingConfigErr := err
+
+		info, err := os.Lstat(executable)
+		if err != nil {
+			return "", fmt.Errorf("inspect wrapper path %s: %w", executable, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return "", fmt.Errorf("inspect config %s: %w", configPath, missingConfigErr)
+		}
+		target, err := os.Readlink(executable)
+		if err != nil {
+			return "", fmt.Errorf("read wrapper symlink %s: %w", executable, err)
+		}
+		targetPath := target
+		if !filepath.IsAbs(target) {
+			targetPath = filepath.Dir(executable)
+			if !strings.HasSuffix(targetPath, string(os.PathSeparator)) {
+				targetPath += string(os.PathSeparator)
+			}
+			targetPath += target
+		}
+		// Keep the raw path until EvalSymlinks processes symlinked dirs and following ".." components.
+		targetDir, targetName := filepath.Split(targetPath)
+		unresolvedTargetDir := targetDir
+		targetDir, err = filepath.EvalSymlinks(targetDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve wrapper symlink target directory %s: %w", unresolvedTargetDir, err)
+		}
+		// Leave the target's final component unresolved for the next config check and symlink hop.
+		executable = filepath.Join(targetDir, targetName)
+	}
+}
+
+func readConfig(configPath string) (config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return config{}, nil, fmt.Errorf("read %s: %w", configPath, err)
+		return config{}, fmt.Errorf("read %s: %w", configPath, err)
 	}
-
 	var cfg config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return config{}, nil, fmt.Errorf("parse %s: %w", configPath, err)
+		return config{}, fmt.Errorf("parse %s: %w", configPath, err)
 	}
 	if cfg.LogPath == "" {
-		return cfg, nil, fmt.Errorf("%s is missing mandatory key log_path", configPath)
+		return cfg, fmt.Errorf("%s is missing mandatory key log_path", configPath)
 	}
 	if !filepath.IsAbs(cfg.LogPath) {
-		return cfg, nil, fmt.Errorf("%s key log_path must be an absolute path", configPath)
+		return cfg, fmt.Errorf("%s key log_path must be an absolute path", configPath)
+	}
+	return cfg, nil
+}
+
+func readConfigAndOpenLog(executable string) (config, *os.File, error) {
+	configPath, err := discoverConfigPath(executable)
+	if err != nil {
+		return config{}, nil, err
+	}
+	cfg, err := readConfig(configPath)
+	if err != nil {
+		return cfg, nil, err
 	}
 
 	// The log parent must already exist; creating it here could hide a bad config path.
