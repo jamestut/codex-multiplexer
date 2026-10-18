@@ -37,3 +37,17 @@ A relative `codex_path` is resolved from the directory of the originally invoked
 Run `./codex-multiplexer app-server` or `./codex-multiplexer app-server --listen stdio://`. The executable may be symlinked and invoked from another location. The first invocation starts Codex using its arguments, working directory, and environment; later invocations connect to that server. The server keeps running after wrapper clients exit. The log is appended with wrapper failures and Codex output.
 
 Keep stdin open until you have received the responses you need; closing stdin disconnects that client.
+
+## Diagnostic information
+
+Run `./codex-multiplexer --multiplexer-info` with no other arguments to print a JSON object to stdout and exit:
+
+```json
+{
+  "codex_path": "/path/to/original/codex",
+  "socket_path": "/path/to/runtime/app-server.sock",
+  "running": true
+}
+```
+
+`running` reports whether the configured Codex app server socket responds to a WebSocket handshake.

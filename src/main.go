@@ -36,6 +36,12 @@ type config struct {
 	RuntimeDir string  `json:"runtime_dir"`
 }
 
+type multiplexerInfo struct {
+	CodexPath  string `json:"codex_path"`
+	SocketPath string `json:"socket_path"`
+	Running    bool   `json:"running"`
+}
+
 func main() {
 	if err := run(); err != nil {
 		os.Exit(1)
@@ -48,9 +54,25 @@ func run() error {
 		return reportBootstrapError(err)
 	}
 
-	cfg, logFile, err := readConfigAndOpenLog(executable)
+	cfg, err := loadConfig(executable)
 	if err != nil {
 		return reportBootstrapError(err)
+	}
+	// Diagnostics must work without opening the log or entering server startup.
+	if len(os.Args) > 1 && os.Args[1] == "--multiplexer-info" {
+		if len(os.Args) != 2 {
+			return reportBootstrapError(errors.New("--multiplexer-info must be used alone"))
+		}
+		if err := printMultiplexerInfo(cfg); err != nil {
+			return reportBootstrapError(err)
+		}
+		return nil
+	}
+
+	// The log parent must already exist; creating it here could hide a bad config path.
+	logFile, err := os.OpenFile(cfg.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return reportBootstrapError(fmt.Errorf("open log %s: %w", cfg.LogPath, err))
 	}
 	defer logFile.Close()
 	logger := log.New(logFile, "", log.LstdFlags)
@@ -62,10 +84,6 @@ func run() error {
 	// Broken stdout pipes should become logged write errors instead of SIGPIPE exits.
 	signal.Ignore(syscall.SIGPIPE)
 
-	// Resolve relative Codex paths beside the originally invoked wrapper, preserving its symlink location.
-	if cfg.CodexPath != "" && !filepath.IsAbs(cfg.CodexPath) {
-		cfg.CodexPath = filepath.Join(filepath.Dir(executable), cfg.CodexPath)
-	}
 	if err := validateConfig(cfg); err != nil {
 		logger.Printf("ERROR: %v", err)
 		return err
@@ -184,22 +202,49 @@ func readConfig(configPath string) (config, error) {
 	return cfg, nil
 }
 
-func readConfigAndOpenLog(executable string) (config, *os.File, error) {
+func loadConfig(executable string) (config, error) {
 	configPath, err := discoverConfigPath(executable)
 	if err != nil {
-		return config{}, nil, err
+		return config{}, err
 	}
 	cfg, err := readConfig(configPath)
 	if err != nil {
-		return cfg, nil, err
+		return cfg, err
 	}
 
-	// The log parent must already exist; creating it here could hide a bad config path.
-	logFile, err := os.OpenFile(cfg.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return cfg, nil, fmt.Errorf("open log %s: %w", cfg.LogPath, err)
+	// Resolve relative Codex paths beside the originally invoked wrapper, preserving its symlink location.
+	if cfg.CodexPath != "" && !filepath.IsAbs(cfg.CodexPath) {
+		cfg.CodexPath = filepath.Join(filepath.Dir(executable), cfg.CodexPath)
 	}
-	return cfg, logFile, nil
+	return cfg, nil
+}
+
+func printMultiplexerInfo(cfg config) error {
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+	info := multiplexerInfo{
+		CodexPath:  cfg.CodexPath,
+		SocketPath: filepath.Join(cfg.RuntimeDir, socketName),
+	}
+
+	// A stale socket file is not evidence of a running server; require a WebSocket handshake.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	conn, err := dialUnix(ctx, info.SocketPath)
+	cancel()
+	if err == nil {
+		info.Running = true
+		conn.Close()
+	} else if !isUnavailableSocketError(err) {
+		return fmt.Errorf("probe app-server socket %s: %w", info.SocketPath, err)
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(info); err != nil {
+		return fmt.Errorf("write multiplexer info: %w", err)
+	}
+	return nil
 }
 
 func validateConfig(cfg config) error {
