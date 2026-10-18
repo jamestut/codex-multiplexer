@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -54,7 +55,7 @@ func run() error {
 	defer logFile.Close()
 	logger := log.New(logFile, "", log.LstdFlags)
 	// Capturing fd 2 also records runtime and panic diagnostics in the wrapper log.
-	if err := syscall.Dup2(int(logFile.Fd()), int(os.Stderr.Fd())); err != nil {
+	if err := unix.Dup2(int(logFile.Fd()), int(os.Stderr.Fd())); err != nil {
 		logger.Printf("ERROR: redirect stderr to log: %v", err)
 		return err
 	}
