@@ -1,5 +1,7 @@
 # Codex app-server multiplexer
 
+This project lets multiple local Codex app server clients that typically uses stdio transport (e.g. Codex IDE extensions) share one persistent Codex app-server process. The wrapper starts the server on the first invocation and connects later clients through a Unix socket.
+
 ## Build and configuration
 
 For a native build from the repository root, put the executable and its config together:
