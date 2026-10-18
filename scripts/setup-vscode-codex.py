@@ -182,14 +182,9 @@ def install(args: argparse.Namespace) -> Path:
     extensions_dir = args.extensions_dir
     extension_dir = resolve_extension_dir(extensions_dir)
     codex_path = resolve_codex_path(extension_dir)
-    original_dir = codex_path.parent / "original"
-    original_codex_path = original_dir / "codex"
+    original_codex_path = codex_path.parent / "codex-original"
     if os.path.lexists(original_codex_path):
         raise SetupError(f"Refusing to overwrite existing file: {original_codex_path}")
-    if original_dir.is_symlink():
-        raise SetupError(f"Refusing to use symlink as original directory: {original_dir}")
-    if original_dir.exists() and not original_dir.is_dir():
-        raise SetupError(f"Original path is not a directory: {original_dir}")
 
     config_path = codex_path.parent / "config.json"
     if os.path.lexists(config_path):
@@ -199,16 +194,10 @@ def install(args: argparse.Namespace) -> Path:
     runtime_dir = args.runtime_dir
     if not args.skip_config:
         try:
-            original_dir.mkdir(parents=True, exist_ok=True)
             Path(log_path).parent.mkdir(parents=True, exist_ok=True)
             Path(runtime_dir).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise SetupError(f"Create config directories: {exc}") from exc
-    else:
-        try:
-            original_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise SetupError(f"Create original directory {original_dir}: {exc}") from exc
 
     moved = False
     linked = False
@@ -221,7 +210,7 @@ def install(args: argparse.Namespace) -> Path:
 
         if not args.skip_config:
             config = {
-                "codex_path": "original/codex",
+                "codex_path": "codex-original",
                 "log_path": log_path,
                 "runtime_dir": runtime_dir,
             }
@@ -255,7 +244,7 @@ def main() -> int:
         parser.error(str(exc))
     print(f"Installed codex-multiplexer at {installed_path}")
     if args.skip_config:
-        print('Hint: set "codex_path" to "original/codex" in config.json.')
+        print('Hint: set "codex_path" to "codex-original" in config.json.')
     return 0
 
 
