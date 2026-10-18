@@ -51,3 +51,17 @@ Run `./codex-multiplexer --multiplexer-info` with no other arguments to print a 
 ```
 
 `running` reports whether the configured Codex app server socket responds to a WebSocket handshake.
+
+## Python CLI launcher
+
+`scripts/codex-launcher.py` queries the given multiplexer and launches the original Codex executable used by the multiplexer. However, if the multiplexer reports that the Codex app server is running, then it will make `codex` connect to that existing app server instead.
+
+The launcher's config is separate from the multiplexer config and contains only one key:
+
+```json
+{
+  "multiplexer_path": "/path/to/codex-multiplexer"
+}
+```
+
+You can also install the script elsewhere or symlink it into your `PATH`. Config lookup checks beside the invoked script first, then beside each symlink target one hop at a time, including the final script. The first config found is used.
