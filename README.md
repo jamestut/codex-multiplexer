@@ -13,13 +13,15 @@ cp src/config.example.json config.json
 
 Edit `config.json` before running `./codex-multiplexer app-server`. Set `log_path` and `runtime_dir` to absolute paths. `codex_path` may be absolute or relative. Optionally set `codex_home` to an absolute path to override `CODEX_HOME` for Codex processes the wrapper starts. If omitted, Codex inherits the wrapper's environment. The override applies when a server starts; an already running server keeps its existing environment. `~` is not expanded. The runtime directory is created automatically. The parent directory for the log file must already exist.
 
-To build release artifacts, run `./scripts/build.sh` from the repository root, or invoke that script by its path from another working directory. It writes these files under the repository's `dist/` directory:
+To build release artifacts, run `./dist-tool/build.sh` from the repository root, or invoke that script by its path from another working directory. It writes these files under the repository's `dist/` directory:
 
 - `codex-multiplexer-linux-x64`
 - `codex-multiplexer-linux-arm64`
 - `codex-multiplexer-darwin-arm64`
 
 The release builds use `CGO_ENABLED=0`, `-trimpath`, and `-ldflags='-s -w'`. Go's default optimizations remain enabled. The symbol table and DWARF debug information are stripped, with no separate debug artifact; `-trimpath` removes local build paths from compiled file metadata.
+
+To package each release binary with the Python scripts, run `./dist-tool/package.sh` after building. It writes one ZIP per binary under `dist/`; each ZIP contains the binary at its root and the Python files under `scripts/`. The script can also be invoked by its path from another working directory and requires the `zip` command.
 
 For example, to run the Linux x64 artifact, place its config beside the executable and update the paths for your environment:
 
