@@ -3,102 +3,16 @@
 import argparse
 import json
 import os
-import platform
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from codex_scripts_common import resolve_vscode_codex_path, validate_executable
 
 
 class SetupError(Exception):
     pass
-
-
-def read_extensions_index(extensions_dir: Path) -> list[object]:
-    index_path = extensions_dir / "extensions.json"
-    try:
-        data = json.loads(index_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise SetupError(f"Extensions index not found: {index_path}") from exc
-    except json.JSONDecodeError as exc:
-        raise SetupError(f"Invalid JSON in {index_path}: {exc}") from exc
-
-    if not isinstance(data, list):
-        raise SetupError(f"Expected {index_path} to contain a JSON array")
-    return data
-
-
-def resolve_extension_dir(extensions_dir: Path) -> Path:
-    matches = []
-    for entry in read_extensions_index(extensions_dir):
-        if not isinstance(entry, dict):
-            continue
-        identifier = entry.get("identifier")
-        if isinstance(identifier, dict) and identifier.get("id") == "openai.chatgpt":
-            matches.append(entry)
-
-    if not matches:
-        raise SetupError(f"No openai.chatgpt entry found in {extensions_dir / 'extensions.json'}")
-    if len(matches) > 1:
-        raise SetupError(
-            f"Multiple openai.chatgpt entries found in {extensions_dir / 'extensions.json'}"
-        )
-
-    entry = matches[0]
-    relative_location = entry.get("relativeLocation")
-    if isinstance(relative_location, str) and relative_location:
-        resolved = extensions_dir / relative_location
-        if resolved.is_dir():
-            return resolved
-        raise SetupError(f"Registered openai.chatgpt relativeLocation does not exist: {resolved}")
-
-    location = entry.get("location")
-    if isinstance(location, dict) and location.get("scheme") == "file":
-        location_path = location.get("path")
-        if isinstance(location_path, str) and location_path:
-            resolved = Path(location_path)
-            if resolved.is_dir():
-                return resolved
-            raise SetupError(f"Registered openai.chatgpt location does not exist: {resolved}")
-
-    raise SetupError("The openai.chatgpt entry did not contain a usable location")
-
-
-def resolve_binary_relative_path(extension_dir: Path) -> Path:
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-
-    binary_map = {
-        ("linux", "x86_64"): Path("bin/linux-x86_64/codex"),
-        ("linux", "aarch64"): Path("bin/linux-aarch64/codex"),
-        ("darwin", "arm64"): Path("bin/macos-aarch64/codex"),
-    }
-
-    binary_relative_path = binary_map.get((system, machine))
-    if binary_relative_path is not None:
-        return binary_relative_path
-
-    bin_dir = extension_dir / "bin"
-    if not bin_dir.is_dir():
-        raise SetupError(f"Executable bin directory not found: {bin_dir}")
-
-    candidates = sorted(
-        child
-        for child in bin_dir.iterdir()
-        if child.is_dir() and not child.name.startswith(".")
-    )
-    if not candidates:
-        raise SetupError(f"No non-hidden platform directories found in: {bin_dir}")
-    return Path("bin") / candidates[0].name / "codex"
-
-
-def resolve_codex_path(extension_dir: Path) -> Path:
-    codex_path = extension_dir / resolve_binary_relative_path(extension_dir)
-    if not codex_path.is_file():
-        raise SetupError(f"Codex executable not found: {codex_path}")
-    if not os.access(codex_path, os.X_OK):
-        raise SetupError(f"Codex executable is not executable: {codex_path}")
-    if codex_path.is_symlink():
-        raise SetupError(f"Refusing to replace an existing Codex symlink: {codex_path}")
-    return codex_path
 
 
 def absolute_path(value: str) -> str:
@@ -174,14 +88,18 @@ def rollback_install(
 def install(args: argparse.Namespace) -> Path:
     if not os.path.isabs(args.multiplexer_path):
         raise SetupError("multiplexer_path must be an absolute path")
-    if not os.path.isfile(args.multiplexer_path):
-        raise SetupError(f"Multiplexer executable not found: {args.multiplexer_path}")
-    if not os.access(args.multiplexer_path, os.X_OK):
-        raise SetupError(f"Multiplexer executable is not executable: {args.multiplexer_path}")
+    try:
+        validate_executable(args.multiplexer_path, "Multiplexer")
+    except ValueError as exc:
+        raise SetupError(str(exc)) from exc
 
     extensions_dir = args.extensions_dir
-    extension_dir = resolve_extension_dir(extensions_dir)
-    codex_path = resolve_codex_path(extension_dir)
+    try:
+        codex_path = resolve_vscode_codex_path(extensions_dir)
+    except ValueError as exc:
+        raise SetupError(str(exc)) from exc
+    if codex_path.is_symlink():
+        raise SetupError(f"Refusing to replace an existing Codex symlink: {codex_path}")
     original_codex_path = codex_path.parent / "codex-original"
     if os.path.lexists(original_codex_path):
         raise SetupError(f"Refusing to overwrite existing file: {original_codex_path}")

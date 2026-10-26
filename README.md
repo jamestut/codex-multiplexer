@@ -54,16 +54,19 @@ Run `./codex-multiplexer --multiplexer-info` with no other arguments to print a 
 
 `running` reports whether the configured Codex app server socket responds to a WebSocket handshake.
 
-## Python CLI launcher
+## Python launchers
 
-`scripts/codex-launcher.py` queries the given multiplexer and launches the original Codex executable used by the multiplexer. However, if the multiplexer reports that the Codex app server is running, then it will make `codex` connect to that existing app server instead.
+`scripts/codex_launcher.py` queries the configured multiplexer and launches the original Codex executable used by it. If the multiplexer reports that the Codex app server is running, it makes `codex` connect to that existing app server instead.
 
-The launcher's config is separate from the multiplexer config and contains only one key:
+`scripts/vscode_codex_launcher.py` finds the registered VS Code Codex extension and selects its binary using explicit mappings for Linux x86_64, Linux aarch64, and macOS arm64. On other platforms, it selects `codex` from the alphabetically first non-hidden directory under the extension's `bin` directory, which may not match the current platform. It uses the multiplexer launcher when that binary reports valid multiplexer information; otherwise, it runs the binary directly.
+
+Both scripts look for `config.json` beside the invoked script, and then beside each symlink target, one hop at a time. The first config found is used; only a missing config advances lookup, while an unreadable or invalid config stops with an error. Their config keys are:
 
 ```json
 {
-  "multiplexer_path": "/path/to/codex-multiplexer"
+  "multiplexer_path": "/path/to/codex-multiplexer",
+  "extensions_dir": "/path/to/vscode/extensions"
 }
 ```
 
-You can also install the script elsewhere or symlink it into your `PATH`. Config lookup checks beside the invoked script first, then beside each symlink target one hop at a time, including the final script. The first config found is used.
+`multiplexer_path` is required by `codex_launcher.py` and `extensions_dir` is required by `vscode_codex_launcher.py`. Relative values are resolved from the selected config's directory. When installing elsewhere, keep `codex_launcher.py`, `vscode_codex_launcher.py`, and their shared helper `codex_scripts_common.py` together, or symlink the launcher commands into your `PATH`.
