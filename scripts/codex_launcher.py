@@ -51,6 +51,10 @@ def launch(
             raise
         os.execv(str(selected_path), [str(selected_path), *forwarded_args])
 
+    if forwarded_args == ["--multiplexer-info"]:
+        print(json.dumps(info, indent=2))
+        return
+
     args = [codex_path]
     if info["running"]:
         args.extend(["--remote", "unix://" + socket_path])
