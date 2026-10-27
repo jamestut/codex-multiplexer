@@ -40,6 +40,7 @@ type multiplexerInfo struct {
 	CodexPath  string `json:"codex_path"`
 	SocketPath string `json:"socket_path"`
 	Running    bool   `json:"running"`
+	PID        *int   `json:"pid"`
 }
 
 func main() {
@@ -234,6 +235,8 @@ func printMultiplexerInfo(cfg config) error {
 	cancel()
 	if err == nil {
 		info.Running = true
+		// PID lookup is optional; a failed lookup must not change server readiness.
+		info.PID = socketPeerPID(conn.NetConn())
 		conn.Close()
 	} else if !isUnavailableSocketError(err) {
 		return fmt.Errorf("probe app-server socket %s: %w", info.SocketPath, err)
@@ -245,6 +248,31 @@ func printMultiplexerInfo(cfg config) error {
 		return fmt.Errorf("write multiplexer info: %w", err)
 	}
 	return nil
+}
+
+// Read the peer PID from the same Unix connection used to confirm readiness.
+func socketPeerPID(conn net.Conn) *int {
+	// The net.Conn interface does not expose a file descriptor. A syscall.Conn
+	// provides controlled access to the underlying socket when available.
+	syscallConn, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
+	}
+	// SyscallConn returns a handle for accessing the socket, not a new connection.
+	raw, err := syscallConn.SyscallConn()
+	if err != nil {
+		return nil
+	}
+	var pid int
+	var lookupErr error
+	// Control invokes the anon function on the underlying connection's file
+	// descriptor or handle.
+	if err := raw.Control(func(fd uintptr) {
+		pid, lookupErr = peerPID(int(fd))
+	}); err != nil || lookupErr != nil || pid <= 0 {
+		return nil
+	}
+	return &pid
 }
 
 func validateConfig(cfg config) error {

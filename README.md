@@ -44,7 +44,7 @@ Run the multiplexer with no other arguments:
 ./codex-multiplexer --multiplexer-info
 ```
 
-The output contains the original Codex path, the socket path, and a `running` value. `running` is `true` when the app server responds to a connection. Use the path through which your client invokes the multiplexer to check the same configuration.
+The output contains the original Codex path, the socket path, a `running` value, and the app server's `pid`. `running` is `true` when the app server responds to a connection. The PID is `null` if the server is not running or its PID cannot be retrieved. Use the path through which your client invokes the multiplexer to check the same configuration.
 
 ## How it works
 
