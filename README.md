@@ -1,68 +1,78 @@
 # Codex app-server multiplexer
 
-This project lets multiple local Codex app server clients that typically uses stdio transport (e.g. Codex IDE extensions) share one persistent Codex app-server process. The wrapper starts the server on the first invocation and connects later clients through a Unix socket.
+Share one persistent Codex app server between local clients, such as Codex IDE extensions. The first client starts the server. Later clients connect to the same server.
 
-## Build and configuration
+## Get started
 
-For a native build from the repository root, put the executable and its config together:
+Download and extract the binary for your system. The release archive also contains the Python scripts used below.
 
-```sh
-(cd src && go build -o ../codex-multiplexer .)
-cp src/config.example.json config.json
-```
+### Set up the VS Code extension
 
-Edit `config.json` before running `./codex-multiplexer app-server`. Set `log_path` and `runtime_dir` to absolute paths. `codex_path` may be absolute or relative. Optionally set `codex_home` to an absolute path to override `CODEX_HOME` for Codex processes the wrapper starts. If omitted, Codex inherits the wrapper's environment. The override applies when a server starts; an already running server keeps its existing environment. `~` is not expanded. The runtime directory is created automatically. The parent directory for the log file must already exist.
-
-To build release artifacts, run `./dist-tool/build.sh` from the repository root, or invoke that script by its path from another working directory. It writes these files under the repository's `dist/` directory:
-
-- `codex-multiplexer-linux-x64`
-- `codex-multiplexer-linux-arm64`
-- `codex-multiplexer-darwin-arm64`
-
-The release builds use `CGO_ENABLED=0`, `-trimpath`, and `-ldflags='-s -w'`. Go's default optimizations remain enabled. The symbol table and DWARF debug information are stripped, with no separate debug artifact; `-trimpath` removes local build paths from compiled file metadata.
-
-To package each release binary with the Python scripts, run `./dist-tool/package.sh` after building. It writes one ZIP per binary under `dist/`; each ZIP contains the binary at its root and the Python files under `scripts/`. The script can also be invoked by its path from another working directory and requires the `zip` command.
-
-For example, to run the Linux x64 artifact, place its config beside the executable and update the paths for your environment:
+Install the Codex extension in VS Code, then run the setup script with your extensions directory and the absolute path to the multiplexer binary:
 
 ```sh
-cp src/config.example.json dist/config.json
-./dist/codex-multiplexer-linux-x64 app-server
+python3 scripts/setup_vscode_codex.py /path/to/vscode/extensions /absolute/path/to/codex-multiplexer
 ```
 
-The supported macOS version depends on the Go compiler. According to the [Go minimum requirements](https://go.dev/wiki/MinimumRequirements), Go 1.26, including 1.26.7, requires macOS 12 or later, while Go 1.27 requires macOS 13 or later. Cross-compiling from Linux does not lower the minimum macOS version.
+The script renames the extension's Codex executable to `codex-original` and replaces it with a symlink to the multiplexer. It also creates a `config.json` beside the symlink. Run `python3 scripts/setup_vscode_codex.py --help` to see the available options.
 
-## Runtime behavior
+Start the Codex extension as usual. The first client starts the shared app server.
 
-Config lookup checks beside the invoked path first, including when it is a symlink, then checks beside each symlink target one hop at a time through the real executable. The first config found is used; only a missing config advances lookup, while an unreadable or invalid config stops with an error. For example, if `/a/codex-multiplexer` points to `/b/codex-multiplexer`, which points to the real executable at `/c/codex-multiplexer`, lookup order is `/a/config.json`, `/b/config.json`, then `/c/config.json`.
+### Configure manually
 
-A relative `codex_path` is resolved from the directory of the originally invoked wrapper path, without following wrapper symlinks. This is independent of the working directory and the directory containing the selected config. For example, if `/a/codex-multiplexer` points to `/b/codex-multiplexer` and the config is found in `/b`, either `./codex` or `codex` as `codex_path` means `/a/codex`; a bare `codex` is not looked up in `PATH`.
-
-Run `./codex-multiplexer app-server` or `./codex-multiplexer app-server --listen stdio://`. The executable may be symlinked and invoked from another location. The first invocation starts Codex using its arguments, working directory, and environment; later invocations connect to that server. The server keeps running after wrapper clients exit. The log is appended with wrapper failures and Codex output.
-
-Keep stdin open until you have received the responses you need; closing stdin disconnects that client.
-
-## Diagnostic information
-
-Run `./codex-multiplexer --multiplexer-info` with no other arguments to print a JSON object to stdout and exit:
+To use another client, create a `config.json` beside the multiplexer executable:
 
 ```json
 {
-  "codex_path": "/path/to/original/codex",
-  "socket_path": "/path/to/runtime/app-server.sock",
-  "running": true
+  "codex_path": "/absolute/path/to/codex",
+  "log_path": "/absolute/path/to/codex-multiplexer.log",
+  "runtime_dir": "/absolute/path/to/codex-multiplexer-state"
 }
 ```
 
-`running` reports whether the configured Codex app server socket responds to a WebSocket handshake.
+Set `codex_path` to the original Codex executable. Set `log_path` and `runtime_dir` to absolute paths. The log file's parent directory must already exist. The multiplexer creates the runtime directory if needed.
+
+Optionally, add `"codex_home": "/absolute/path/to/codex-home"` to override `CODEX_HOME` when starting a server. Otherwise, Codex inherits the wrapper's environment. An already running server keeps its existing environment. Paths do not expand `~`.
+
+Configure your client to run the multiplexer in place of Codex. The wrapper accepts `app-server` or `app-server --listen stdio://` as arguments. Keep the client's stdin open until it has received the responses it needs.
+
+## Check the server
+
+Run the multiplexer with no other arguments:
+
+```sh
+./codex-multiplexer --multiplexer-info
+```
+
+The output contains the original Codex path, the socket path, and a `running` value. `running` is `true` when the app server responds to a connection. Use the path through which your client invokes the multiplexer to check the same configuration.
+
+## How it works
+
+### Finding configuration
+
+The multiplexer looks for `config.json` beside the executable used to start it. If that executable is a symlink and no config is found, it checks beside the symlink's target. It continues through the chain until it finds a config.
+
+The first config found is used. An invalid or unreadable config causes an error.
+
+A relative `codex_path` is resolved beside the executable used to start the multiplexer, even if the config is found elsewhere. A bare name is not looked up in `PATH`.
+
+### Finding an existing server
+
+The multiplexer checks the socket in the configured `runtime_dir`. It attempts a connection to confirm that the app server is responding.
+
+If the server is available, the client connects to it. If the socket is unavailable, the multiplexer starts a new server. Other connection errors are reported.
+
+The first invocation supplies the server's arguments, working directory, and environment. The server keeps running after clients disconnect. Wrapper errors and Codex output are appended to the log file.
 
 ## Python launchers
 
-`scripts/codex_launcher.py` queries the configured multiplexer and launches the original Codex executable used by it. If the multiplexer reports that the Codex app server is running, it makes `codex` connect to that existing app server instead.
+Use `scripts/codex_launcher.py` to launch the original Codex executable. When the multiplexer reports a running app server, the launcher connects Codex to that server.
 
-`scripts/vscode_codex_launcher.py` finds the registered VS Code Codex extension and selects its binary using explicit mappings for Linux x86_64, Linux aarch64, and macOS arm64. On other platforms, it selects `codex` from the alphabetically first non-hidden directory under the extension's `bin` directory, which may not match the current platform. It uses the multiplexer launcher when that binary reports valid multiplexer information; otherwise, it runs the binary directly.
+Use `scripts/vscode_codex_launcher.py` to locate the Codex executable installed by the VS Code extension. It uses the multiplexer launcher when that executable reports valid multiplexer information. Otherwise, it runs the executable directly.
 
-Both scripts look for `config.json` beside the invoked script, and then beside each symlink target, one hop at a time. The first config found is used; only a missing config advances lookup, while an unreadable or invalid config stops with an error. Their config keys are:
+The launchers look for `config.json` beside the invoked script. If the script is a symlink, they also check each target until a config is found. An invalid or unreadable config causes an error.
+
+Create a launcher config with the keys needed by the scripts you use:
 
 ```json
 {
@@ -71,4 +81,19 @@ Both scripts look for `config.json` beside the invoked script, and then beside e
 }
 ```
 
-`multiplexer_path` is required by `codex_launcher.py` and `extensions_dir` is required by `vscode_codex_launcher.py`. Relative values are resolved from the selected config's directory. When installing elsewhere, keep `codex_launcher.py`, `vscode_codex_launcher.py`, and their shared helper `codex_scripts_common.py` together, or symlink the launcher commands into your `PATH`.
+`codex_launcher.py` requires `multiplexer_path`. `vscode_codex_launcher.py` requires `extensions_dir`. Relative paths are resolved from the config's directory.
+
+Keep both launchers and `codex_scripts_common.py` together when installing them elsewhere. You can also symlink the launcher commands into your `PATH`.
+
+## Build from source
+
+Install Go; see its [system requirements](https://go.dev/wiki/MinimumRequirements). From the repository root, run:
+
+```sh
+(cd src && go build -o ../codex-multiplexer .)
+cp src/config.example.json config.json
+```
+
+Edit `config.json` for your environment before running the multiplexer.
+
+To build release binaries, run `./dist-tool/build.sh`. To package them with the Python scripts, run `./dist-tool/package.sh` afterward. Both write their output to `dist/`; packaging requires `zip`.
