@@ -30,10 +30,11 @@ const (
 )
 
 type config struct {
-	CodexPath  string  `json:"codex_path"`
-	CodexHome  *string `json:"codex_home"`
-	LogPath    string  `json:"log_path"`
-	RuntimeDir string  `json:"runtime_dir"`
+	CodexPath       string  `json:"codex_path"`
+	CodexHome       *string `json:"codex_home"`
+	CodexSQLiteHome *string `json:"codex_sqlite_home"`
+	LogPath         string  `json:"log_path"`
+	RuntimeDir      string  `json:"runtime_dir"`
 }
 
 type multiplexerInfo struct {
@@ -293,6 +294,11 @@ func validateConfig(cfg config) error {
 			return errors.New("config.json key codex_home must be an absolute path")
 		}
 	}
+	if cfg.CodexSQLiteHome != nil {
+		if !filepath.IsAbs(*cfg.CodexSQLiteHome) {
+			return errors.New("config.json key codex_sqlite_home must be an absolute path")
+		}
+	}
 	return nil
 }
 
@@ -307,11 +313,17 @@ func environmentWithOverride(env []string, name string, value string) []string {
 	return append(result, prefix+value)
 }
 
-func codexEnvironment(env []string, codexHome *string) []string {
-	if codexHome == nil {
+func codexEnvironment(env []string, codexHome, codexSQLiteHome *string) []string {
+	if codexHome == nil && codexSQLiteHome == nil {
 		return nil
 	}
-	return environmentWithOverride(env, "CODEX_HOME", *codexHome)
+	if codexHome != nil {
+		env = environmentWithOverride(env, "CODEX_HOME", *codexHome)
+	}
+	if codexSQLiteHome != nil {
+		env = environmentWithOverride(env, "CODEX_SQLITE_HOME", *codexSQLiteHome)
+	}
+	return env
 }
 
 // Preserve all caller arguments except stdio transport flags, which the server replaces.
@@ -399,7 +411,7 @@ func ensureLocked(cfg config, args []string, socketPath string, logger *log.Logg
 	// Append the Unix transport after preserving the caller's non-stdio arguments.
 	commandArgs := append(append([]string(nil), args...), "--listen", "unix://"+socketPath)
 	cmd := exec.Command(cfg.CodexPath, commandArgs...)
-	cmd.Env = codexEnvironment(os.Environ(), cfg.CodexHome)
+	cmd.Env = codexEnvironment(os.Environ(), cfg.CodexHome, cfg.CodexSQLiteHome)
 	// Passing the file directly avoids a wrapper-owned pipe that would close on exit.
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

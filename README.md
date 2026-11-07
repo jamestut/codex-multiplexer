@@ -32,7 +32,12 @@ To use another client, create a `config.json` beside the multiplexer executable:
 
 Set `codex_path` to the original Codex executable. Set `log_path` and `runtime_dir` to absolute paths. The log file's parent directory must already exist. The multiplexer creates the runtime directory if needed.
 
-Optionally, add `"codex_home": "/absolute/path/to/codex-home"` to override `CODEX_HOME` when starting a server. Otherwise, Codex inherits the wrapper's environment. An already running server keeps its existing environment. Paths do not expand `~`.
+Optionally, add these settings to override environment variables when starting a server:
+
+- `"codex_home": "/absolute/path/to/codex-home"` overrides `CODEX_HOME`.
+- `"codex_sqlite_home": "/absolute/path/to/codex-sqlite-home"` overrides `CODEX_SQLITE_HOME`.
+
+If either setting is omitted, Codex inherits that variable from the wrapper's environment. An already running server keeps its existing environment. Paths do not expand `~`.
 
 Configure your client to run the multiplexer in place of Codex. The wrapper accepts `app-server` or `app-server --listen stdio://` as arguments. Keep the client's stdin open until it has received the responses it needs.
 
