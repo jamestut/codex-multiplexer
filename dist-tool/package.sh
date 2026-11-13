@@ -5,10 +5,12 @@ SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd)
 DIST_DIR=$ROOT_DIR/dist
 
-if ! command -v zip >/dev/null 2>&1; then
-    echo "zip command not found" >&2
-    exit 1
-fi
+for command in tar xz; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "$command command not found" >&2
+        exit 1
+    fi
+done
 
 BINARIES="codex-multiplexer-linux-x64 codex-multiplexer-linux-arm64 codex-multiplexer-darwin-arm64"
 for binary in $BINARIES; do
@@ -27,10 +29,9 @@ fi
 
 cd "$DIST_DIR"
 for binary in $BINARIES; do
-    archive=$binary.zip
-    rm -f "$archive"
-    zip -q "$archive" "$binary"
-    cd "$ROOT_DIR"
-    zip -q "$DIST_DIR/$archive" scripts/*.py
-    cd "$DIST_DIR"
+    tar -cJf "$binary.tar.xz" "$binary"
 done
+
+# Preserve the scripts/ directory in the separate archive.
+cd "$ROOT_DIR"
+tar -cJf "$DIST_DIR/scripts.tar.xz" scripts/*.py

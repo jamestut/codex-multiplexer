@@ -4,7 +4,7 @@ Share one persistent Codex app server between local clients, such as Codex IDE e
 
 ## Get started
 
-Download and extract the binary for your system. The release archive also contains the Python scripts used below.
+Download and extract the binary archive for your system. Download and extract `scripts.tar.xz` separately to use the Python scripts below.
 
 ### Set up the VS Code extension
 
@@ -103,4 +103,4 @@ cp src/config.example.json config.json
 
 Edit `config.json` for your environment before running the multiplexer.
 
-To build release binaries, run `./dist-tool/build.sh`. To package them with the Python scripts, run `./dist-tool/package.sh` afterward. Both write their output to `dist/`; packaging requires `zip`.
+To build release binaries, run `./dist-tool/build.sh`. Run `./dist-tool/package.sh` afterward to create a `.tar.xz` archive for each binary and a separate `scripts.tar.xz` archive for the Python scripts. Both write their output to `dist/`. Packaging requires `tar` and `xz`.
