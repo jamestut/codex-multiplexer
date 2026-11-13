@@ -29,6 +29,10 @@ def launch(
     selected_path = Path(multiplexer_path) if multiplexer_path is not None else load_multiplexer_path()
     forwarded_args = list(sys.argv[1:] if args is None else args)
 
+    # Relay diagnostics directly, including failure JSON and the child exit status.
+    if forwarded_args == ["--multiplexer-info"]:
+        os.execv(str(selected_path), [str(selected_path), *forwarded_args])
+
     try:
         result = subprocess.run(
             [str(selected_path), "--multiplexer-info"],
@@ -50,10 +54,6 @@ def launch(
         if not fallback_to_path:
             raise
         os.execv(str(selected_path), [str(selected_path), *forwarded_args])
-
-    if forwarded_args == ["--multiplexer-info"]:
-        print(json.dumps(info, indent=2))
-        return
 
     args = [codex_path]
     if info["running"]:

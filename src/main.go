@@ -38,10 +38,11 @@ type config struct {
 }
 
 type multiplexerInfo struct {
-	CodexPath  string `json:"codex_path"`
-	SocketPath string `json:"socket_path"`
-	Running    bool   `json:"running"`
-	PID        *int   `json:"pid"`
+	CodexPath  string      `json:"codex_path"`
+	SocketPath string      `json:"socket_path"`
+	Running    bool        `json:"running"`
+	PID        *int        `json:"pid"`
+	Version    versionInfo `json:"version"`
 }
 
 func main() {
@@ -51,6 +52,10 @@ func main() {
 }
 
 func run() error {
+	// Handle diagnostics first so bootstrap errors can include version information.
+	if len(os.Args) > 1 && os.Args[1] == "--multiplexer-info" {
+		return runMultiplexerInfo(os.Args[1:])
+	}
 	executable, err := invokedExecutablePath()
 	if err != nil {
 		return reportBootstrapError(err)
@@ -60,17 +65,6 @@ func run() error {
 	if err != nil {
 		return reportBootstrapError(err)
 	}
-	// Diagnostics must work without opening the log or entering server startup.
-	if len(os.Args) > 1 && os.Args[1] == "--multiplexer-info" {
-		if len(os.Args) != 2 {
-			return reportBootstrapError(errors.New("--multiplexer-info must be used alone"))
-		}
-		if err := printMultiplexerInfo(cfg); err != nil {
-			return reportBootstrapError(err)
-		}
-		return nil
-	}
-
 	// The log parent must already exist; creating it here could hide a bad config path.
 	logFile, err := os.OpenFile(cfg.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -221,13 +215,57 @@ func loadConfig(executable string) (config, error) {
 	return cfg, nil
 }
 
-func printMultiplexerInfo(cfg config) error {
-	if err := validateConfig(cfg); err != nil {
-		return err
+func runMultiplexerInfo(args []string) error {
+	if len(args) != 1 {
+		return reportInfoError(errors.New("--multiplexer-info must be used alone"), "Run --multiplexer-info without other arguments.")
 	}
+	executable, err := invokedExecutablePath()
+	if err != nil {
+		return reportInfoError(err, "Invoke the multiplexer using its executable path.")
+	}
+	cfg, err := loadConfig(executable)
+	if err != nil {
+		return reportInfoError(err, "Create or fix config.json beside the invoked executable or along its symlink chain. See the README configuration section.")
+	}
+	if err := validateConfig(cfg); err != nil {
+		return reportInfoError(err, "Fix the configuration values described in the error. See the README configuration section.")
+	}
+	info, err := collectMultiplexerInfo(cfg)
+	if err != nil {
+		return reportInfoError(err, "Check the configured runtime directory and app-server socket, then try again.")
+	}
+	if err := writeInfo(info); err != nil {
+		return reportBootstrapError(err)
+	}
+	return nil
+}
+
+func reportInfoError(err error, help string) error {
+	result := struct {
+		Version versionInfo `json:"version"`
+		Error   string      `json:"error"`
+		Help    string      `json:"help"`
+	}{currentVersion(), err.Error(), help}
+	if writeErr := writeInfo(result); writeErr != nil {
+		return reportBootstrapError(writeErr)
+	}
+	return err
+}
+
+func writeInfo(info any) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(info); err != nil {
+		return fmt.Errorf("write multiplexer info: %w", err)
+	}
+	return nil
+}
+
+func collectMultiplexerInfo(cfg config) (multiplexerInfo, error) {
 	info := multiplexerInfo{
 		CodexPath:  cfg.CodexPath,
 		SocketPath: filepath.Join(cfg.RuntimeDir, socketName),
+		Version:    currentVersion(),
 	}
 
 	// A stale socket file is not evidence of a running server; require a WebSocket handshake.
@@ -240,15 +278,9 @@ func printMultiplexerInfo(cfg config) error {
 		info.PID = socketPeerPID(conn.NetConn())
 		conn.Close()
 	} else if !isUnavailableSocketError(err) {
-		return fmt.Errorf("probe app-server socket %s: %w", info.SocketPath, err)
+		return multiplexerInfo{}, fmt.Errorf("probe app-server socket %s: %w", info.SocketPath, err)
 	}
-
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(info); err != nil {
-		return fmt.Errorf("write multiplexer info: %w", err)
-	}
-	return nil
+	return info, nil
 }
 
 // Read the peer PID from the same Unix connection used to confirm readiness.
