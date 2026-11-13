@@ -36,18 +36,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="absolute path to codex-multiplexer (used literally as the symlink target)",
     )
     parser.add_argument(
+        "-c",
+        "--codex-home",
+        type=absolute_path,
+        help="absolute path overriding CODEX_HOME for a new server (ignored with --skip-config)",
+    )
+    parser.add_argument(
+        "-d",
+        "--codex-sqlite-home",
+        type=absolute_path,
+        help="absolute path overriding CODEX_SQLITE_HOME for a new server (ignored with --skip-config)",
+    )
+    parser.add_argument(
         "-l",
         "--log-path",
         type=absolute_path,
         default=os.path.join(temp_dir, "codex-app-server", "log.log"),
-        help="absolute log file path",
+        help="absolute path to the multiplexer log file (default: %(default)s)",
     )
     parser.add_argument(
         "-r",
         "--runtime-dir",
         type=absolute_path,
         default=os.path.join(temp_dir, "codex-app-server", "state"),
-        help="absolute runtime directory",
+        help="absolute path to the directory for the app-server socket and startup lock (default: %(default)s)",
     )
     parser.add_argument(
         "-s",
@@ -132,6 +144,10 @@ def install(args: argparse.Namespace) -> Path:
                 "log_path": log_path,
                 "runtime_dir": runtime_dir,
             }
+            if args.codex_home is not None:
+                config["codex_home"] = args.codex_home
+            if args.codex_sqlite_home is not None:
+                config["codex_sqlite_home"] = args.codex_sqlite_home
             with config_path.open("x", encoding="utf-8") as config_file:
                 config_created = True
                 json.dump(config, config_file, indent=2)
