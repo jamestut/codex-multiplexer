@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
+"""Launch Codex and connect to the shared app server when it is running.
+
+For remote sessions, use the current directory unless the caller supplies
+--cd or -C.
+
+Set NOCM=1 to skip the automatic --remote and --cd flags. The launcher
+still queries the multiplexer to locate Codex and passes your arguments unchanged.
+Any non-empty NOCM value except the exact string "0" enables this mode.
+"""
 
 import json
 import os
 import subprocess
 import sys
+from itertools import takewhile
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
@@ -55,12 +65,17 @@ def launch(
             raise
         os.execv(str(selected_path), [str(selected_path), *forwarded_args])
 
-    args = [codex_path]
-    if info["running"]:
-        args.extend(["--remote", "unix://" + socket_path])
-    args.extend(forwarded_args)
+    command = [codex_path]
+    add_multiplexer_flags = os.environ.get("NOCM", "") in ("", "0")
+    if info["running"] and add_multiplexer_flags:
+        command.extend(["--remote", "unix://" + socket_path])
+        # Arguments after -- are literal, even if they look like directory options.
+        options = takewhile(lambda arg: arg != "--", forwarded_args)
+        if not any(arg == "--cd" or arg.startswith(("--cd=", "-C")) for arg in options):
+            command.extend(["--cd", os.getcwd()])
+    command.extend(forwarded_args)
     # Replace the launcher so Codex inherits the terminal, signals, and exit status.
-    os.execv(codex_path, args)
+    os.execv(codex_path, command)
 
 
 def main() -> int:
