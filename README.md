@@ -105,4 +105,6 @@ cp src/config.example.json config.json
 
 Edit `config.json` for your environment before running the multiplexer.
 
-To build release binaries, run `make build` from the repository root. Run `./dist-tool/package.sh` afterward to create a `.tar.xz` archive for each binary and a separate `scripts.tar.xz` archive for the Python scripts. Both write their output to `dist/`. Packaging requires `tar` and `xz`.
+To build release binaries, run `make build` from the repository root. Run `make package` afterward to create a `.tar.xz` archive for each binary and a separate `scripts.tar.xz` archive for the Python scripts. Both write their output to `dist/`. Packaging requires `tar` and `xz`.
+
+To package an individual binary, run `make dist/codex-multiplexer-linux-x64.tar.xz`, replacing the binary name as needed. Run `make dist/scripts.tar.xz` to package only the scripts. Make recreates an archive when its inputs are newer. Binary packaging fails if the corresponding binary is missing.
