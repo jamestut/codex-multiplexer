@@ -32,6 +32,8 @@ To use another client, create a `config.json` beside the multiplexer executable:
 
 Set `codex_path` to the original Codex executable. Set `log_path` and `runtime_dir` to absolute paths. The log file's parent directory must already exist. The multiplexer creates the runtime directory if needed.
 
+`runtime_dir` holds the socket created by the Codex app server and the startup lock used by the multiplexer. Clients that use the same runtime directory will share the same server.
+
 Optionally, add these settings to override environment variables when starting a server:
 
 - `"codex_home": "/absolute/path/to/codex-home"` overrides `CODEX_HOME`.
@@ -103,4 +105,4 @@ cp src/config.example.json config.json
 
 Edit `config.json` for your environment before running the multiplexer.
 
-To build release binaries, run `./dist-tool/build.sh`. Run `./dist-tool/package.sh` afterward to create a `.tar.xz` archive for each binary and a separate `scripts.tar.xz` archive for the Python scripts. Both write their output to `dist/`. Packaging requires `tar` and `xz`.
+To build release binaries, run `make build` from the repository root. Run `./dist-tool/package.sh` afterward to create a `.tar.xz` archive for each binary and a separate `scripts.tar.xz` archive for the Python scripts. Both write their output to `dist/`. Packaging requires `tar` and `xz`.
