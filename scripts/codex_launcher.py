@@ -19,7 +19,7 @@ from typing import Optional, Sequence, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from codex_scripts_common import load_launcher_config, resolve_configured_path
+from codex_scripts_common import discover_config_path, load_launcher_config, resolve_configured_path
 
 
 def load_multiplexer_path() -> Path:
@@ -27,6 +27,23 @@ def load_multiplexer_path() -> Path:
     if "multiplexer_path" not in config:
         raise ValueError(f"{config_path} is missing the key multiplexer_path")
     return resolve_configured_path(config_path, "multiplexer_path", config["multiplexer_path"])
+
+
+def direct_codex_environment(multiplexer_path: Path) -> dict[str, str]:
+    """Apply the multiplexer home settings to a standalone Codex process."""
+    config_path = discover_config_path(multiplexer_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError(f"{config_path} must contain a JSON object")
+
+    env = os.environ.copy()
+    for key, name in (("codex_home", "CODEX_HOME"), ("codex_sqlite_home", "CODEX_SQLITE_HOME")):
+        value = config.get(key)
+        if value is not None:
+            if not isinstance(value, str) or not os.path.isabs(value):
+                raise ValueError(f"{config_path} key {key} must be an absolute path")
+            env[name] = value
+    return env
 
 
 def launch(
@@ -74,6 +91,11 @@ def launch(
         if not any(arg == "--cd" or arg.startswith(("--cd=", "-C")) for arg in options):
             command.extend(["--cd", os.getcwd()])
     command.extend(forwarded_args)
+    # Explicit remote options also make this a client of an existing server.
+    options = takewhile(lambda arg: arg != "--", forwarded_args)
+    has_remote = any(arg == "--remote" or arg.startswith("--remote=") for arg in options)
+    if (not info["running"] or not add_multiplexer_flags) and not has_remote:
+        os.execve(codex_path, command, direct_codex_environment(selected_path))
     # Replace the launcher so Codex inherits the terminal, signals, and exit status.
     os.execv(codex_path, command)
 
